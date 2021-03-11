@@ -1,0 +1,76 @@
+---
+title: "Practice Doc"
+author: "Me"
+date: "2020-03-11"
+output: html_document
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(lubridate)
+library(gt)
+```
+
+```{r, include=FALSE}
+ tech_charges <- read_excel(here("data","tech-charges-example.xlsx"),                             sheet = "Charges")
+tech_payments <- read_excel(here("data","tech-charges-example.xlsx"),                            sheet = "Payments")
+```
+
+```{r, include=FALSE}
+select_ch <-  
+  tech_charges  %>% 
+  select(Group,Client, date, Invoice_num,charge_amount) 
+  
+
+select_pmt <- 
+  tech_payments %>% 
+  select(Group,Client, date, Invoice_num,payment_amount)
+
+select_join <- 
+  full_join(select_ch,select_pmt, 
+            by = c("Group", "Client","Invoice_num", "date")) %>% 
+  mutate(year=year(date), 
+         month=month(date), 
+         day=day(date))
+
+total<- select_join %>% 
+  group_by(month, Client) %>% 
+  summarise_at(vars(contains("amount")), sum, na.rm=TRUE) %>% 
+  ungroup()
+
+
+
+client_group_total <- select_join %>% 
+  group_by(Client, month) %>% 
+  summarise_at(vars(contains("amount")), sum, na.rm=TRUE) %>% 
+  mutate(starting_balance = lag(cumsum(charge_amount)+cumsum(payment_amount))) %>% 
+  relocate(starting_balance, .after = month) %>% 
+  replace(is.na(.), 0)%>% 
+  mutate(ending_balance = round(rowSums(across(c(starting_balance,charge_amount,payment_amount))), 2))
+```
+
+```{r gt table, echo=FALSE}
+gt_total <- client_group_total %>% 
+  gt(rowname_col = "month") %>% 
+  tab_header(
+    title = "Total 2020", 
+    subtitle = "Monthly Charges and Payments by Client"
+  ) %>% 
+  tab_spanner(
+    label = "Balance",
+    columns = vars(starting_balance,charge_amount,payment_amount,ending_balance)
+  ) %>% 
+  tab_stubhead(
+    label = "Client"
+  ) %>% 
+  cols_label(
+    starting_balance ="Start",
+    charge_amount = "Charges",
+    payment_amount = "Payments",
+    ending_balance = "End"
+  )
+
+gt_total
+```
